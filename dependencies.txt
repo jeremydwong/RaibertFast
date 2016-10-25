@@ -1,0 +1,3 @@
+dependencies:
+sfigure
+ - can be substituted for figure. just keeps focus.
