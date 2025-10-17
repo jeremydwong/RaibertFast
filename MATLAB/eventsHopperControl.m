@@ -1,42 +1,31 @@
-function [value,isterminal,direction] = events1HopperControl(t,q,param)
-% state variables:
-%   q(1) - x position of the foot
+function [value,isterminal,direction] = eventsHopperControl(t,q,param)
+% using ONLY these state variables:
 %   q(2) - y position of the foot
-%   q(3) - absolute angle of leg (from vertical)
-%   q(4) - absolute angle of body
 %   q(5) - leg length
 %   q(6:10) - derivatives of q(1:5)
 
-% control variables:
-%   u(1) - position of leg spring actuator
-%   u(2) - torque at the hip
+% as well as 
+% rest spring length r_s0
+% threshold for leg being extended
+thresh_leg_extended = 0.0001;
 
 isterminal = 1;
 direction = 1; %only when the value is increasing.
 
-
-
-COMPRESSION = param.FSM_COMPRESSION;
-THRUST = param.FSM_THRUST;
-UNLOADING = param.FSM_LOADING;
-FLIGHT = param.FSM_FLIGHT;
-
-y_foot = q(2);
+y_foot  = q(2);
+l       = q(5);
 ddt_leg = q(10);
-% state_ctrl = param.state_ctrl;
-%four state fsm.
-% value(i) stores the transition condition from i to i+1.
 % DDT_OFFSET= .2;
 switch param.fsm_state
-    case COMPRESSION
+    case param.FSM_COMPRESSION
         value = ddt_leg; %-DDT_OFFSET; %go from compression to thrust when leg stops compressing.
-    case THRUST
-        value = -(param.r_s0 - q(5))-.0001; %go from thrust to unloading when leg elongates.
-    case UNLOADING
-        value = y_foot; %transition from unloading to flight
-    case FLIGHT
-        value = -y_foot;%from flight to compression when foot enters ground.
-end;
+    case param.FSM_THRUST
+        value = -(param.r_s0 - l) - thresh_leg_extended; %when leg is fully extended
+    % case param.FSM_LOADING
+    %     value = y_foot; % robot has left the ground
+    case param.FSM_FLIGHT
+        value = -y_foot;% touchdown
+end
 
 
 

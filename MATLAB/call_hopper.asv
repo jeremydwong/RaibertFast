@@ -1,71 +1,22 @@
-function [t_out, y_state,e] = call_hopper(varargin)
-% CALL_HOPPER Simulate a hopper with Raibert control
-%
-% Inputs (all optional with defaults):
-%   tstart - Start time (default: 0)
-%   tfinal - Final time (default: 5)
-%   x_dot_des - Desired horizontal velocity in m/s (default: 3)
-%   x_0 - Initial horizontal position (default: 0.0)
-%   y_0 - Initial vertical position (default: 0.4)
-%   legrad_vert_0 - Initial leg angle (default: 0.01)
-%   bodyrad_vert_0 - Initial body angle (default: 0.0)
-%   l_0 - Initial leg length (default: 1)
-%   save_animation - Whether to save animation (default: true)
-%   animation_filename - Animation filename (default: 'anim.mp4')
+% function [t_out, y_state,e] = call_hopper()
 
-tstart      = 0;
-tfinal      = 5;
-x_dot_des   = 2;
-x_0 = 0.0;
-y_0 = 0.4;
-legrad_vert_0 = 0.01;
-bodyrad_vert_0 = 0.0;
-l_0 = 1;
-save_animation = 1;
-animation_filename = 'animation.mp4';
-
-opt_argin = varargin;
-while length(opt_argin) >= 2
-  opt = opt_argin{1};
-  val = opt_argin{2};
-  opt_argin = opt_argin(3:end);
-  switch opt
-    case 'tstart'
-      tstart = val;
-    case 'tfinal'
-      tfinal = val;
-      case 'xdotdes'
-      x_dot_des = val;
-    case 'x0'
-      x_0 = val;
-    case 'y0'
-      tstart = val;
-    case 'leg0'
-      legrad_vert_0= val;
-    case 'body0'
-      bodyrad_vert_0= val;
-    case 'l0'
-      l_0= val;
-    case 'saveanimation'
-      save_animation= val;
-    case 'animationfilename'
-      animation_filename= val;      
-  end
-end
-
+tstart = 0;
+tfinal = 5;
 
 % set p;
 p = hopperParameters();
-p.x_dot_des = x_dot_des; %m/s
+p.x_dot_des = 3; %m/s
 
 % set the state!
 % remember: yfoot is 2. we should really be setting p.fsm_state after y0.
+% y0 = [0.0; 0.4; 0.01; 0.0; 1.0; zeros(5,1)];
+x_0 = 0.0; y_0 = 0.4; legrad_vert_0 = 0.01; bodyrad_vert_0 = 0.0; l_0 = 1;
 X0 = [x_0; y_0; legrad_vert_0; bodyrad_vert_0; l_0; zeros(5,1)]; %standard start 20160501.
 % y0 = [0.0; 0.4; 0.00; 0.0; 1.0; zeros(5,1)]; %vertical.
 
 %
 p.t_state_switch = tstart;
-options = odeset('Events',@eventsHopperControl,'reltol',1e-8,'abstol',1e-8,'MaxStep',.05);
+options = odeset('Events',@eventsHopperControl,'reltol',1e-8,'abstol',1e-8);
 sr_sim = 1000;
 %%
 % t_out  -> time vector
@@ -199,46 +150,25 @@ ah =[];
 ah(1)=subplot(2,1,1);
 plot(t_out,y_out(:,2:4));legend('yfoot','foot angle','body angle');
 grid on;
-title('y-foot, foot angle, body angle');
 ah(2)=subplot(2,1,2);
 feedback_ang = y_out(:,4)-y_out(:,3)/2;
 plot(t_out,feedback_ang,'r'); grid on; line([xlim],[0,0]);
 linkaxes(ah,'x');
-xlabel('Time (s)')
-title('feedback angle?')
+title('foot, ')
 %%
 sr_video = 24;
 dur_frame = 1/sr_video;
 ds = round(sr_sim/sr_video);
 tout_vid = t_out(1:ds:length(t_out));
 yout_vid = y_out(1:ds:length(y_out),1:5);
-
-if save_animation
-    % Set up video writer
-    v = VideoWriter(animation_filename, 'MPEG-4');
-    v.FrameRate = sr_video;
-    open(v);
-end
-
 for i =1:length(yout_vid)
     tic;
     draw(p,tout_vid(i),yout_vid(i,1:5));
     dur_draw = toc;
-
-    if save_animation
-        frame = getframe(gcf);
-        writeVideo(v, frame);
-    end
-
     if dur_draw<dur_frame
         pause(dur_frame-dur_draw);
     end
     drawnow;
-end
-
-if save_animation
-    close(v);
-    fprintf('Animation saved to %s\n', animation_filename);
 end
 
 %%
@@ -256,14 +186,14 @@ y_state.ddt_len_leg = y_out(:,10);
 y_state.u = extra_states(:,1:2);
 y_state.fsm_state = extra_states(:,3);
 % NEAR_0 = 1e-5;
-
+% ind_near_0 = abs(y_state.u(:,1)) < NEAR_0;
+% 20160123
+% condition u to cover numerical errors about 0?
+% cumtrapz produces improper integral of input force axial to leg.
+% y_state.u(ind_near_0) = 0;
 %%
 e = hopperEnergy(t_out,y_state,p);
 
 %% check
-sumerr = 0;
-for i = 1:length(replication_data)
-stated = replication_data{i}.state_d;
-out = hopperDynamicsFwd(replication_data{i}.t,replication_data{i}.state(:),replication_data{i}.p);
-sumerr = sumerr + sum((stated - out.stated).^2);
-end
+stated = replication_data{1}.state_d;
+out = hopperDynamicsFwd(replication_data{1}.t,replication_data{1}.state(:),replication_data{1}.p)

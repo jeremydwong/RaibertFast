@@ -62,8 +62,8 @@ structOut=struct;
 
 structOut.stated = xdot;
 % we also want to know these things, but note where they are changed:
-% u, FSMstate
-structOut.r_sd  = r_sd;                 % current spring length
-structOut.fsm_state = p_obj.fsm_state;  % 1 of 4 fsm states, affects next2:
-structOut.u = u;                        % cmd [F,tau] [axial,about] leg. 
-structOut.a_des = a_des;                % desired leg angle. 
+% u, FSMstate, 
+structOut.u = u;                        % force/torque along/about the leg. 
+structOut.a_des = a_des;                % desired angle of the leg.
+structOut.r_sd = r_sd;                  % spring length (diff
+structOut.fsm_state = p_obj.fsm_state;
