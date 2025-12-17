@@ -196,10 +196,11 @@ RK45StepResult<StateType, DerivType> rk45_step(
 // EVENT DETECTION VIA BISECTION
 // ============================================================================
 
-template<typename StateType, typename DerivType>
+template<typename StateType, typename DerivType, typename ParamType>
 double find_event_time(
-    std::function<DerivType(double, const StateType&)> dynamics,
-    std::function<double(double, const StateType&)> event,
+    std::function<DerivType(double, const StateType&, const ParamType&)> dynamics,
+    std::function<double(double, const StateType&, const ParamType&)> event,
+    const ParamType& params,
     double t0_in, const StateType& y0_in, double e0_in,
     double t1_in, const StateType& y1_in, double e1_in,
     double tol = 1e-10,
@@ -227,7 +228,7 @@ double find_event_time(
             y_mid[i] = y0[i] + alpha * (y1[i] - y0[i]);
         }
 
-        double e_mid = event(t_mid, y_mid);
+        double e_mid = event(t_mid, y_mid, params);
 
         if (std::abs(e_mid) < tol) {
             return t_mid;
@@ -254,12 +255,13 @@ double find_event_time(
 // MAIN INTEGRATION LOOP WITH EVENT DETECTION
 // ============================================================================
 
-template<typename StateType, typename DerivType>
+template<typename StateType, typename DerivType, typename ParamType>
 IntegrateResult<StateType> integrate_with_events(
-    std::function<DerivType(double, const StateType&)> dynamics,
-    std::function<double(double, const StateType&)> event,
+    std::function<DerivType(double, const StateType&, const ParamType&)> dynamics,
+    std::function<double(double, const StateType&, const ParamType&)> event,
     double t0, double tf,
     const StateType& y0,
+    const ParamType& params,
     RK45Config config = RK45Config()
 ) {
     IntegrateResult<StateType> result;
@@ -270,7 +272,7 @@ IntegrateResult<StateType> integrate_with_events(
     StateType y = y0;
     double h = std::min(config.max_step, (tf - t0) / 10.0);
 
-    double e_prev = event(t, y);
+    double e_prev = event(t, y, params);
 
     int step_count = 0;
     while (t < tf && step_count < config.max_steps) {
@@ -281,8 +283,11 @@ IntegrateResult<StateType> integrate_with_events(
             h = tf - t;
         }
 
-        // Take a step
-        auto step = rk45_step<StateType, DerivType>(dynamics, t, y, h, config);
+        // Take a step (wrap dynamics to match expected signature)
+        auto dynamics_wrapper = [&dynamics, &params](double time, const StateType& state) -> DerivType {
+            return dynamics(time, state, params);
+        };
+        auto step = rk45_step<StateType, DerivType>(dynamics_wrapper, t, y, h, config);
 
         if (!step.accepted) {
             // Step rejected, try again with smaller step
@@ -291,15 +296,15 @@ IntegrateResult<StateType> integrate_with_events(
         }
 
         // Check for event
-        double e_new = event(t + h, step.y_new);
+        double e_new = event(t + h, step.y_new, params);
 
         // Event detected if sign changed (going positive direction)
         bool event_detected = (e_prev <= 0 && e_new > 0);
 
         if (event_detected) {
             // Find precise event time via bisection
-            double t_event = find_event_time<StateType, DerivType>(
-                dynamics, event,
+            double t_event = find_event_time<StateType, DerivType, ParamType>(
+                dynamics, event, params,
                 t, y, e_prev,
                 t + h, step.y_new, e_new
             );
@@ -339,16 +344,17 @@ IntegrateResult<StateType> integrate_with_events(
 // SIMPLE INTEGRATION (NO EVENTS)
 // ============================================================================
 
-template<typename StateType, typename DerivType>
+template<typename StateType, typename DerivType, typename ParamType>
 IntegrateResult<StateType> integrate(
-    std::function<DerivType(double, const StateType&)> dynamics,
+    std::function<DerivType(double, const StateType&, const ParamType&)> dynamics,
     double t0, double tf,
     const StateType& y0,
+    const ParamType& params,
     RK45Config config = RK45Config()
 ) {
     // Dummy event that never triggers
-    auto no_event = [](double, const StateType&) { return -1.0; };
-    return integrate_with_events<StateType, DerivType>(dynamics, no_event, t0, tf, y0, config);
+    auto no_event = [](double, const StateType&, const ParamType&) { return -1.0; };
+    return integrate_with_events<StateType, DerivType, ParamType>(dynamics, no_event, t0, tf, y0, params, config);
 }
 
 // ============================================================================

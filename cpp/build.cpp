@@ -52,21 +52,12 @@ SimulationResult run_hopper_simulation(
     while (t_final - t > 1e-6) {
         segment++;
 
-        // Create dynamics and event functions bound to current parameters
-        // (We copy p to avoid issues with changing fsm_state during integration)
+        // Copy p to avoid issues with changing fsm_state during integration
         Parameters p_snapshot = p;
 
-        auto dynamics = [p_snapshot](double time, const State& state) -> StateDot {
-            return hopper_dynamics(time, state, p_snapshot);
-        };
-
-        auto event = [p_snapshot](double time, const State& state) -> double {
-            return hopper_event(time, state, p_snapshot);
-        };
-
         // Integrate until event or t_final
-        auto seg_result = integrate_with_events<State, StateDot>(
-            dynamics, event, t, t_final, y, config
+        auto seg_result = integrate_with_events<State, StateDot, Parameters>(
+            hopper_dynamics, hopper_event, t, t_final, y, p_snapshot, config
         );
 
         // Store results (subsample to desired rate)
