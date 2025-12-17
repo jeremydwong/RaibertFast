@@ -153,7 +153,7 @@ struct DynamicsOutput {
 
 // Hand-written 5x5 Gaussian elimination with partial pivoting
 // Educational: shows students exactly what's happening
-inline void solve_5x5_gaussian(const double M_in[5][5], const double b_in[5], double x[5]) {
+static void solve_5x5_gaussian(const double M_in[5][5], const double b_in[5], double x[5]) {
     // Copy inputs (we modify during elimination)
     double M[5][5];
     double b[5];
@@ -210,7 +210,7 @@ inline void solve_5x5_gaussian(const double M_in[5][5], const double b_in[5], do
 }
 
 // Eigen-based 5x5 solver (default, faster for production)
-inline void solve_5x5_eigen(const double M_in[5][5], const double b_in[5], double x[5]) {
+static void solve_5x5_eigen(const double M_in[5][5], const double b_in[5], double x[5]) {
     Eigen::Matrix<double, 5, 5> M;
     Eigen::Matrix<double, 5, 1> b;
 
@@ -230,13 +230,13 @@ inline void solve_5x5_eigen(const double M_in[5][5], const double b_in[5], doubl
 
 // Function pointer for selecting solver (default: Eigen)
 using MatrixSolver = void(*)(const double[5][5], const double[5], double[5]);
-inline MatrixSolver g_matrix_solver = solve_5x5_eigen;
+static MatrixSolver g_matrix_solver = solve_5x5_eigen;
 
 // ============================================================================
 // CONTROL (from hopperStateControl.m / hopper.py)
 // ============================================================================
 
-inline ControlOutput hopper_control(double t, const State& q, const Parameters& p) {
+static ControlOutput hopper_control(double t, const State& q, const Parameters& p) {
     ControlOutput ctrl;
 
     // Control gains
@@ -308,7 +308,7 @@ inline ControlOutput hopper_control(double t, const State& q, const Parameters& 
 // DYNAMICS (from hopperDynamicsFwd.m / hopper.py)
 // ============================================================================
 
-inline DynamicsOutput hopper_dynamics_fwd(double t, const State& q, const Parameters& p) {
+static DynamicsOutput hopper_dynamics_fwd(double t, const State& q, const Parameters& p) {
     DynamicsOutput out;
     out.fsm_state = p.fsm_state;
 
@@ -429,7 +429,7 @@ inline DynamicsOutput hopper_dynamics_fwd(double t, const State& q, const Parame
 }
 
 // ODE-compatible wrapper (returns just state derivative)
-inline StateDot hopper_dynamics(double t, const State& q, const Parameters& p) {
+static StateDot hopper_dynamics(double t, const State& q, const Parameters& p) {
     return hopper_dynamics_fwd(t, q, p).state_dot;
 }
 
@@ -438,7 +438,7 @@ inline StateDot hopper_dynamics(double t, const State& q, const Parameters& p) {
 // ============================================================================
 
 // Returns event function value. Zero-crossing (positive direction) triggers state transition.
-inline double hopper_event(double t, const State& q, const Parameters& p) {
+static double hopper_event(double t, const State& q, const Parameters& p) {
     constexpr double thresh_leg_extended = 0.0001;
 
     if (p.fsm_state == Parameters::FSM_COMPRESSION) {
@@ -462,21 +462,21 @@ inline double hopper_event(double t, const State& q, const Parameters& p) {
 // UTILITY FUNCTIONS
 // ============================================================================
 
-inline void print_state(const State& q, const char* label = "") {
+static void print_state(const State& q, const char* label = "") {
     printf("%s State: x=%.4f z=%.4f phi_leg=%.4f phi_body=%.4f len=%.4f\n",
            label, q.x_foot, q.z_foot, q.phi_leg, q.phi_body, q.len_leg);
     printf("        dx=%.4f dz=%.4f dphi_leg=%.4f dphi_body=%.4f dlen=%.4f\n",
            q.ddt_x_foot, q.ddt_z_foot, q.ddt_phi_leg, q.ddt_phi_body, q.ddt_len_leg);
 }
 
-inline void print_state_dot(const StateDot& qd, const char* label = "") {
+static void print_state_dot(const StateDot& qd, const char* label = "") {
     printf("%s StateDot: dx=%.4f dz=%.4f dphi_leg=%.4f dphi_body=%.4f dlen=%.4f\n",
            label, qd.ddt_x_foot, qd.ddt_z_foot, qd.ddt_phi_leg, qd.ddt_phi_body, qd.ddt_len_leg);
     printf("           ddx=%.4f ddz=%.4f ddphi_leg=%.4f ddphi_body=%.4f ddlen=%.4f\n",
            qd.dddt_x_foot, qd.dddt_z_foot, qd.dddt_phi_leg, qd.dddt_phi_body, qd.dddt_len_leg);
 }
 
-inline const char* fsm_state_name(int state) {
+static const char* fsm_state_name(int state) {
     switch (state) {
         case Parameters::FSM_COMPRESSION: return "COMPRESSION";
         case Parameters::FSM_THRUST:      return "THRUST";
