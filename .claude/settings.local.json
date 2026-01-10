@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(\"C:\\\\Program Files \\(x86\\)\\\\Microsoft Visual Studio\\\\2022\\\\BuildTools\\\\VC\\\\Tools\\\\MSVC\\\\14.44.35207\\\\bin\\\\Hostx64\\\\x64\\\\cl.exe\" /std:c++17 /O2 /EHsc test_implicit_cpu.cpp /Fe:test_implicit_cpu.exe)",
+      "Bash(\"C:\\\\Program Files\\\\NVIDIA GPU Computing Toolkit\\\\CUDA\\\\v12.9\\\\bin\\\\nvcc.exe\" -O2 test_cuda.cu -o test_cuda.exe)",
+      "Bash(cmd /c \"\"\"C:\\\\Program Files \\(x86\\)\\\\Microsoft Visual Studio\\\\2022\\\\BuildTools\\\\VC\\\\Auxiliary\\\\Build\\\\vcvars64.bat\"\" >nul 2>&1 && cd /d c:\\\\Git\\\\Robotics\\\\RaibertFast\\\\cpp && cl /std:c++17 /O2 /EHsc test_implicit_cpu.cpp /Fe:test_implicit_cpu.exe\")",
+      "Bash(cmd /c:*)",
+      "Bash(ls:*)",
+      "Bash(./test_implicit_cpu.exe:*)",
+      "Bash(nvcc:*)",
+      "Bash(echo:*)",
+      "Bash(where bash:*)",
+      "Bash(\"C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.9/bin/nvcc.exe\":*)",
+      "Bash(./test_cuda.exe:*)",
+      "Bash(./test_cuda_f64.exe:*)"
+    ],
+  "ask" : [
+    "Bash(git push:*)"
+    ],
+    "deny" : [
+        "Read(.env*)",
+        "Bash(rm -rf:*)"
+      ]
+
+  }
+
+}

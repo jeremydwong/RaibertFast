@@ -4,21 +4,39 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This repository contains both MATLAB and Python implementations of a Raibert hopper - a one-legged robotic hopper that uses a finite state machine to control hopping motion. The simulation includes dynamics, control, visualization, and energy analysis.
+This repository contains MATLAB, Python, C++ and CUDA implementations of a Raibert hopper - a one-legged robotic hopper that uses a finite state machine to control hopping motion. The simulation includes dynamics, control, visualization, and energy analysis.
 
 ## Running the Simulation
 
 ### Python Version
 
-**Environment Setup:**
+**Environment Setup (Windows dev machine):**
 
-The Python version requires a conda environment. To activate it, run:
+Anaconda Python location: `C:\Users\wongj\anaconda3\python.exe`
 
+**Option 1: Virtual environment (venv)**
 ```bash
-eval "$(/opt/miniconda3/bin/conda shell.bash hook)" && conda activate hopper
+# Create venv (run from project root)
+"C:\Users\wongj\anaconda3\python.exe" -m venv .venv
+
+# Activate in Git Bash
+source .venv/Scripts/activate
+
+# Install dependencies
+pip install -r requirements.txt
 ```
 
-**Running the simulation:**
+**Option 2: Conda environment**
+```bash
+# Initialize conda for Git Bash
+eval "$("C:\Users\wongj\anaconda3\Scripts\conda.exe" shell.bash hook)"
+
+# Create and activate environment
+conda env create -f environment.yaml
+conda activate hopper
+```
+
+**Running the python simulation:**
 
 ```bash
 cd src
@@ -162,3 +180,28 @@ To change simulation parameters: Modify arguments to `call_hopper()`:
 - `save_figures` - whether to save plots and animation (default: True)
 
 To run in Jupyter: `jupyter notebook hopper_demo.ipynb`
+
+### C++ and CUDA
+
+The C++ implementation has two different implementations for the ODE Solver:
+ODE45-based and Implicit
+
+**Build Environment (Windows with Git Bash):**
+
+Since Claude Code runs in Git Bash, use full paths to the compilers:
+
+- **MSVC (cl.exe)**: `"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64\cl.exe"`
+- **CUDA (nvcc)**: `"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9\bin\nvcc.exe"`
+
+**Building C++ files:**
+```bash
+"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64\cl.exe" /std:c++17 /O2 /EHsc cpp/test_implicit_cpu.cpp /Fe:cpp/test_implicit_cpu.exe
+```
+
+**Building CUDA files:**
+nvcc needs cl.exe in PATH or use `-ccbin` to specify it:
+```bash
+"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9\bin\nvcc.exe" -ccbin "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64" -O2 cpp/cuda/test_cuda.cu -o cpp/cuda/test_cuda.exe
+```
+
+**Note**: Paths with spaces must be quoted. The `-ccbin` flag tells nvcc where to find the host compiler (cl.exe).

@@ -1,0 +1,26 @@
+{
+    "terminal.integrated.profiles.windows": {
+        "VS Developer PowerShell": {
+            "source": "PowerShell",
+            "args": [
+                "-NoExit",
+                "-Command",
+                "& { Import-Module 'C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/Common7/Tools/Microsoft.VisualStudio.DevShell.dll'; Enter-VsDevShell -VsInstallPath 'C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools' -DevCmdArguments '-arch=x64' }"
+            ]
+        },
+        "VS Developer Cmd": {
+            "path": "cmd.exe",
+            "args": [
+                "/k",
+                "C:\\Program Files (x86)\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Auxiliary\\Build\\vcvars64.bat"
+            ]
+        }
+    },
+    "terminal.integrated.defaultProfile.windows": "VS Developer Cmd",
+    "C_Cpp.default.compilerPath": "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64/cl.exe",
+    "C_Cpp.default.includePath": [
+        "${workspaceFolder}/**",
+        "C:/libs/eigen-3.4.1",
+        "C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.9/include"
+    ]
+}
