@@ -6,32 +6,61 @@ setlocal
 
 REM Paths - adjust if needed
 set CUDA_PATH=C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9
-set EIGEN_PATH=C:\libs\eigen-3.4.1
 set MSVC_PATH=C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207
 
 REM Add to PATH
 set PATH=%CUDA_PATH%\bin;%MSVC_PATH%\bin\Hostx64\x64;%PATH%
 
-REM Architecture: sm_86 for RTX 30xx, sm_89 for RTX 40xx, sm_75 for RTX 20xx
-set CUDA_ARCH=sm_86
+REM Output directory (one level up from project root)
+set OUT_DIR=..\..\..\RaibertFastBuild
+if not exist %OUT_DIR% mkdir %OUT_DIR%
 
 echo Building CUDA hopper simulation...
 echo CUDA: %CUDA_PATH%
-echo Eigen: %EIGEN_PATH%
+echo Output: %OUT_DIR%
 
-REM Build test executable
-nvcc -std=c++17 -O2 ^
-    -arch=%CUDA_ARCH% ^
-    -I"%EIGEN_PATH%" ^
-    -I".." ^
+REM Build GPU test (FP32, semi-implicit Euler - fastest)
+echo.
+echo [1/2] Building GPU test (FP32)...
+nvcc -O2 ^
+    -ccbin "%MSVC_PATH%\bin\Hostx64\x64" ^
+    -DHOPPER_USE_FLOAT32 ^
+    -DHOPPER_INTEGRATOR=2 ^
     test_cuda.cu ^
-    -o test_cuda.exe
+    -o %OUT_DIR%\test_cuda.exe
 
-if %ERRORLEVEL% EQU 0 (
-    echo Build successful: test_cuda.exe
-) else (
-    echo Build failed!
+if %ERRORLEVEL% NEQ 0 (
+    echo GPU build failed!
     exit /b 1
 )
+echo Built: %OUT_DIR%\test_cuda.exe
+
+REM Build CPU test (same flags for fair comparison)
+echo.
+echo [2/2] Building CPU test (FP32)...
+nvcc -O2 ^
+    -ccbin "%MSVC_PATH%\bin\Hostx64\x64" ^
+    -DHOPPER_USE_FLOAT32 ^
+    -DHOPPER_INTEGRATOR=2 ^
+    -x cu ^
+    ..\test_implicit_cpu.cpp ^
+    -o %OUT_DIR%\test_cpu.exe
+
+if %ERRORLEVEL% NEQ 0 (
+    echo CPU build failed!
+    exit /b 1
+)
+echo Built: %OUT_DIR%\test_cpu.exe
+
+echo.
+echo Build successful!
+echo.
+echo Run tests:
+echo   %OUT_DIR%\test_cuda.exe --test
+echo   %OUT_DIR%\test_cpu.exe --test
+echo.
+echo Run benchmark (4096 hoppers, 5s):
+echo   %OUT_DIR%\test_cuda.exe --multi -n 4096 -t 5.0 --no-export
+echo   %OUT_DIR%\test_cpu.exe --multi -n 4096 -t 5.0
 
 endlocal

@@ -56,7 +56,7 @@ def find_trajectory_files(directory, prefix):
     return files
 
 
-def animate_multi_hopper_with_video(trajectories, p, output_video_path, fps=30, depth=0.15):
+def animate_multi_hopper_with_video(trajectories, p, output_video_path, fps=30, depth=0.15, hopper_spacing=0.15):
     """
     Animate multiple hoppers in MeshCat and export to video.
 
@@ -66,6 +66,7 @@ def animate_multi_hopper_with_video(trajectories, p, output_video_path, fps=30, 
         output_video_path: Path for output video file
         fps: Animation framerate
         depth: 3D extrusion depth
+        hopper_spacing: Distance between hoppers in grid (meters)
 
     Returns:
         vis: MeshCat Visualizer object
@@ -110,6 +111,20 @@ def animate_multi_hopper_with_video(trajectories, p, output_video_path, fps=30, 
     vis = meshcat.Visualizer()
     print(f"MeshCat visualizer: {vis.url()}")
     vis.delete()
+
+    # Compute grid layout for tiling hoppers
+    grid_cols = int(np.ceil(np.sqrt(N)))
+    grid_rows = int(np.ceil(N / grid_cols))
+    print(f"Grid layout: {grid_rows}x{grid_cols}, spacing: {hopper_spacing}m")
+
+    def get_hopper_offset(idx):
+        """Get (x_offset, y_offset) for hopper index in grid layout."""
+        row = idx // grid_cols
+        col = idx % grid_cols
+        # Center the grid
+        x_off = (col - (grid_cols - 1) / 2) * hopper_spacing
+        y_off = (row - (grid_rows - 1) / 2) * hopper_spacing
+        return x_off, y_off
 
     # Set camera for a good view
     vis["/Cameras/default"].set_transform(
@@ -204,26 +219,26 @@ def animate_multi_hopper_with_video(trajectories, p, output_video_path, fps=30, 
                 avg_x += x_foot
                 count += 1
 
-                # Spread hoppers along Y axis
-                y_offset = (i - N/2) * 0.5
+                # Get grid position offset for this hopper
+                x_offset, y_offset = get_hopper_offset(i)
 
                 cos_leg = np.cos(phi_leg)
                 sin_leg = np.sin(phi_leg)
                 x_hip = x_foot + leg_length * sin_leg
                 z_hip = z_foot + leg_length * cos_leg
 
-                # Foot
-                foot_tf = tf.translation_matrix([x_foot, y_offset, z_foot]) @ \
+                # Foot (add grid offsets to x and y)
+                foot_tf = tf.translation_matrix([x_foot + x_offset, y_offset, z_foot]) @ \
                           tf.rotation_matrix(phi_leg, [0, 1, 0])
                 frame[f"hopper_{i}"]["foot"].set_transform(foot_tf)
 
                 # Leg
-                leg_tf = tf.translation_matrix([x_hip, y_offset, z_hip]) @ \
+                leg_tf = tf.translation_matrix([x_hip + x_offset, y_offset, z_hip]) @ \
                          tf.rotation_matrix(phi_leg, [0, 1, 0])
                 frame[f"hopper_{i}"]["leg"].set_transform(leg_tf)
 
                 # Body
-                body_tf = tf.translation_matrix([x_hip, y_offset, z_hip]) @ \
+                body_tf = tf.translation_matrix([x_hip + x_offset, y_offset, z_hip]) @ \
                           tf.rotation_matrix(phi_body, [0, 1, 0])
                 frame[f"hopper_{i}"]["body"].set_transform(body_tf)
 
@@ -259,6 +274,7 @@ def main():
     # Parse arguments
     output_dir = sys.argv[1] if len(sys.argv) > 1 else "../RaibertFastBuild"
     prefix = sys.argv[2] if len(sys.argv) > 2 else "trajectory_cuda"
+    hopper_spacing = float(sys.argv[3]) if len(sys.argv) > 3 else 1.0  # Default 1m spacing
 
     # Convert to absolute path
     if not os.path.isabs(output_dir):
@@ -298,7 +314,7 @@ def main():
     p = hopperParameters()
 
     # Run animation
-    vis = animate_multi_hopper_with_video(trajectories, p, video_output, fps=30)
+    vis = animate_multi_hopper_with_video(trajectories, p, video_output, fps=30, hopper_spacing=hopper_spacing)
 
     if vis is not None:
         print("\nPress Ctrl+C to exit...")

@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <vector>
+#include <chrono>
 
 #include "hopper_types.cuh"
 #include "hopper_cuda.cuh"
@@ -1132,8 +1133,9 @@ __global__ void kernel_sample_trajectory(
 // BATCHED MULTI-HOPPER SIMULATION (new implementation)
 // ============================================================================
 
-void run_multi_hopper_simulation_batched(int N, Scalar t_final, const char* output_prefix, Scalar sample_rate = 100.0) {
+void run_multi_hopper_simulation_batched(int N, Scalar t_final, const char* output_prefix, bool export_csv = true, Scalar sample_rate = 100.0) {
     printf("Running BATCHED parallel simulation of %d hoppers for %.2f seconds...\n", N, t_final);
+    if (!export_csv) printf("  (benchmark mode - no trajectory export)\n");
 
     Scalar dt = 1e-4;
     int num_steps = (int)(t_final / dt);
@@ -1148,11 +1150,13 @@ void run_multi_hopper_simulation_batched(int N, Scalar t_final, const char* outp
     // Allocate Newton workspace
     BatchedNewtonWorkspace workspace = allocate_newton_workspace(N);
 
-    // Allocate trajectory storage on device
-    size_t traj_size = (size_t)N * num_samples * 14 * sizeof(Scalar);
-    Scalar* d_trajectory;
-    cudaMalloc(&d_trajectory, traj_size);
-    printf("  Trajectory buffer: %.2f MB\n", traj_size / (1024.0 * 1024.0));
+    // Allocate trajectory storage on device (only if exporting)
+    size_t traj_size = export_csv ? (size_t)N * num_samples * 14 * sizeof(Scalar) : 0;
+    Scalar* d_trajectory = nullptr;
+    if (export_csv) {
+        cudaMalloc(&d_trajectory, traj_size);
+        printf("  Trajectory buffer: %.2f MB\n", traj_size / (1024.0 * 1024.0));
+    }
 
     // Allocate per-hopper control params
     ControlParams* d_ctrl;
@@ -1203,8 +1207,8 @@ void run_multi_hopper_simulation_batched(int N, Scalar t_final, const char* outp
     int sample_idx = 0;
 
     for (int step = 0; step <= num_steps; step++) {
-        // Sample at regular intervals
-        if (step % sample_every == 0 && sample_idx < num_samples) {
+        // Sample at regular intervals (skip if not exporting)
+        if (d_trajectory && step % sample_every == 0 && sample_idx < num_samples) {
             kernel_compute_control_batched<<<blocks, threads>>>(
                 d_states, d_ctrl, ctrl_default, phys, workspace.u1, workspace.u2, N, t
             );
@@ -1250,60 +1254,64 @@ void run_multi_hopper_simulation_batched(int N, Scalar t_final, const char* outp
         return;
     }
 
-    // Copy trajectory back to host
-    printf("  Copying trajectory to host...\n");
-    std::vector<Scalar> h_trajectory(N * num_samples * 14);
-    cudaMemcpy(h_trajectory.data(), d_trajectory, traj_size, cudaMemcpyDeviceToHost);
+    if (export_csv) {
+        // Copy trajectory back to host
+        printf("  Copying trajectory to host...\n");
+        std::vector<Scalar> h_trajectory(N * num_samples * 14);
+        cudaMemcpy(h_trajectory.data(), d_trajectory, traj_size, cudaMemcpyDeviceToHost);
 
-    // Export to CSV files
-    printf("  Exporting %d CSV files...\n", N);
-    for (int i = 0; i < N; i++) {
-        char filename[256];
-        snprintf(filename, sizeof(filename), "%s_%03d.csv", output_prefix, i);
-
-        FILE* f = fopen(filename, "w");
-        if (!f) {
-            printf("ERROR: Could not open %s\n", filename);
-            continue;
-        }
-
-        fprintf(f, "t,x_foot,z_foot,phi_leg,phi_body,len_leg,"
-                   "ddt_x_foot,ddt_z_foot,ddt_phi_leg,ddt_phi_body,ddt_len_leg,"
-                   "fsm_state,u1,u2\n");
-
-        for (int s = 0; s < num_samples; s++) {
-            int base = (i * num_samples + s) * 14;
-            fprintf(f, "%.10e,%.10e,%.10e,%.10e,%.10e,%.10e,"
-                       "%.10e,%.10e,%.10e,%.10e,%.10e,"
-                       "%d,%.10e,%.10e\n",
-                    h_trajectory[base + 0], h_trajectory[base + 1], h_trajectory[base + 2],
-                    h_trajectory[base + 3], h_trajectory[base + 4], h_trajectory[base + 5],
-                    h_trajectory[base + 6], h_trajectory[base + 7], h_trajectory[base + 8],
-                    h_trajectory[base + 9], h_trajectory[base + 10],
-                    (int)h_trajectory[base + 11], h_trajectory[base + 12], h_trajectory[base + 13]);
-        }
-        fclose(f);
-    }
-
-    // Export summary
-    char summary_file[256];
-    snprintf(summary_file, sizeof(summary_file), "%s_summary.csv", output_prefix);
-    FILE* f = fopen(summary_file, "w");
-    if (f) {
-        fprintf(f, "hopper_id,x_dot_des,final_x,final_z\n");
+        // Export to CSV files
+        printf("  Exporting %d CSV files...\n", N);
         for (int i = 0; i < N; i++) {
-            int base = (i * num_samples + (num_samples - 1)) * 14;
-            fprintf(f, "%d,%.4f,%.4f,%.4f\n", i, h_ctrl[i].x_dot_des,
-                    h_trajectory[base + 1], h_trajectory[base + 2]);
-        }
-        fclose(f);
-        printf("  Summary: %s\n", summary_file);
-    }
+            char filename[256];
+            snprintf(filename, sizeof(filename), "%s_%03d.csv", output_prefix, i);
 
-    printf("Done! Files: %s_000.csv through %s_%03d.csv\n", output_prefix, output_prefix, N-1);
+            FILE* f = fopen(filename, "w");
+            if (!f) {
+                printf("ERROR: Could not open %s\n", filename);
+                continue;
+            }
+
+            fprintf(f, "t,x_foot,z_foot,phi_leg,phi_body,len_leg,"
+                       "ddt_x_foot,ddt_z_foot,ddt_phi_leg,ddt_phi_body,ddt_len_leg,"
+                       "fsm_state,u1,u2\n");
+
+            for (int s = 0; s < num_samples; s++) {
+                int base = (i * num_samples + s) * 14;
+                fprintf(f, "%.10e,%.10e,%.10e,%.10e,%.10e,%.10e,"
+                           "%.10e,%.10e,%.10e,%.10e,%.10e,"
+                           "%d,%.10e,%.10e\n",
+                        h_trajectory[base + 0], h_trajectory[base + 1], h_trajectory[base + 2],
+                        h_trajectory[base + 3], h_trajectory[base + 4], h_trajectory[base + 5],
+                        h_trajectory[base + 6], h_trajectory[base + 7], h_trajectory[base + 8],
+                        h_trajectory[base + 9], h_trajectory[base + 10],
+                        (int)h_trajectory[base + 11], h_trajectory[base + 12], h_trajectory[base + 13]);
+            }
+            fclose(f);
+        }
+
+        // Export summary
+        char summary_file[256];
+        snprintf(summary_file, sizeof(summary_file), "%s_summary.csv", output_prefix);
+        FILE* f = fopen(summary_file, "w");
+        if (f) {
+            fprintf(f, "hopper_id,x_dot_des,final_x,final_z\n");
+            for (int i = 0; i < N; i++) {
+                int base = (i * num_samples + (num_samples - 1)) * 14;
+                fprintf(f, "%d,%.4f,%.4f,%.4f\n", i, h_ctrl[i].x_dot_des,
+                        h_trajectory[base + 1], h_trajectory[base + 2]);
+            }
+            fclose(f);
+            printf("  Summary: %s\n", summary_file);
+        }
+
+        printf("Done! Files: %s_000.csv through %s_%03d.csv\n", output_prefix, output_prefix, N-1);
+    } else {
+        printf("Done! (no export)\n");
+    }
 
     // Cleanup
-    cudaFree(d_trajectory);
+    if (d_trajectory) cudaFree(d_trajectory);
     cudaFree(d_ctrl);
     free_state_arrays_device(d_states);
     free_newton_workspace(workspace);
@@ -1353,8 +1361,8 @@ __global__ void kernel_simulate_hoppers_with_history(
     int sample_idx = 0;
 
     for (int step = 0; step <= num_steps; step++) {
-        // Sample at regular intervals
-        if (step % sample_every == 0 && sample_idx < num_samples) {
+        // Sample at regular intervals (skip if trajectory_data is nullptr)
+        if (trajectory_data && step % sample_every == 0 && sample_idx < num_samples) {
             // Compute control for logging
             ControlOutput control = compute_control(
                 t, x_foot, z_foot, phi_leg, phi_body, len_leg,
@@ -1429,8 +1437,9 @@ __global__ void kernel_simulate_hoppers_with_history(
     states.t_thrust_on[idx] = t_thrust_on;
 }
 
-void run_multi_hopper_simulation(int N, Scalar t_final, const char* output_prefix, Scalar sample_rate = 100.0) {
+void run_multi_hopper_simulation(int N, Scalar t_final, const char* output_prefix, bool export_csv = true, Scalar sample_rate = 100.0) {
     printf("Running parallel simulation of %d hoppers for %.2f seconds...\n", N, t_final);
+    if (!export_csv) printf("  (benchmark mode - no trajectory export)\n");
 
     Scalar dt = 1e-4;
     int num_steps = (int)(t_final / dt);
@@ -1442,11 +1451,13 @@ void run_multi_hopper_simulation(int N, Scalar t_final, const char* output_prefi
     // Allocate device state arrays
     HopperStateArrays d_states = allocate_state_arrays_device(N);
 
-    // Allocate trajectory storage on device
-    size_t traj_size = (size_t)N * num_samples * 14 * sizeof(Scalar);
-    Scalar* d_trajectory;
-    cudaMalloc(&d_trajectory, traj_size);
-    printf("  Trajectory buffer: %.2f MB\n", traj_size / (1024.0 * 1024.0));
+    // Allocate trajectory storage on device (only if exporting)
+    size_t traj_size = export_csv ? (size_t)N * num_samples * 14 * sizeof(Scalar) : 0;
+    Scalar* d_trajectory = nullptr;
+    if (export_csv) {
+        cudaMalloc(&d_trajectory, traj_size);
+        printf("  Trajectory buffer: %.2f MB\n", traj_size / (1024.0 * 1024.0));
+    }
 
     // Allocate per-hopper control params
     ControlParams* d_ctrl;
@@ -1515,70 +1526,74 @@ void run_multi_hopper_simulation(int N, Scalar t_final, const char* output_prefi
         return;
     }
 
-    // Copy trajectory back to host
-    printf("  Copying trajectory to host...\n");
-    std::vector<Scalar> h_trajectory(N * num_samples * 14);
-    cudaMemcpy(h_trajectory.data(), d_trajectory, traj_size, cudaMemcpyDeviceToHost);
+    if (export_csv) {
+        // Copy trajectory back to host
+        printf("  Copying trajectory to host...\n");
+        std::vector<Scalar> h_trajectory(N * num_samples * 14);
+        cudaMemcpy(h_trajectory.data(), d_trajectory, traj_size, cudaMemcpyDeviceToHost);
 
-    // Export to CSV files - one per hopper
-    printf("  Exporting %d CSV files...\n", N);
-    for (int i = 0; i < N; i++) {
-        char filename[256];
-        snprintf(filename, sizeof(filename), "%s_%03d.csv", output_prefix, i);
-
-        FILE* f = fopen(filename, "w");
-        if (!f) {
-            printf("ERROR: Could not open %s\n", filename);
-            continue;
-        }
-
-        // Header
-        fprintf(f, "t,x_foot,z_foot,phi_leg,phi_body,len_leg,"
-                   "ddt_x_foot,ddt_z_foot,ddt_phi_leg,ddt_phi_body,ddt_len_leg,"
-                   "fsm_state,u1,u2\n");
-
-        for (int s = 0; s < num_samples; s++) {
-            int base = (i * num_samples + s) * 14;
-            fprintf(f, "%.10e,%.10e,%.10e,%.10e,%.10e,%.10e,"
-                       "%.10e,%.10e,%.10e,%.10e,%.10e,"
-                       "%d,%.10e,%.10e\n",
-                    h_trajectory[base + 0],
-                    h_trajectory[base + 1],
-                    h_trajectory[base + 2],
-                    h_trajectory[base + 3],
-                    h_trajectory[base + 4],
-                    h_trajectory[base + 5],
-                    h_trajectory[base + 6],
-                    h_trajectory[base + 7],
-                    h_trajectory[base + 8],
-                    h_trajectory[base + 9],
-                    h_trajectory[base + 10],
-                    (int)h_trajectory[base + 11],
-                    h_trajectory[base + 12],
-                    h_trajectory[base + 13]);
-        }
-        fclose(f);
-    }
-
-    // Also export summary of final states
-    char summary_file[256];
-    snprintf(summary_file, sizeof(summary_file), "%s_summary.csv", output_prefix);
-    FILE* f = fopen(summary_file, "w");
-    if (f) {
-        fprintf(f, "hopper_id,x_dot_des,final_x,final_z\n");
+        // Export to CSV files - one per hopper
+        printf("  Exporting %d CSV files...\n", N);
         for (int i = 0; i < N; i++) {
-            int base = (i * num_samples + (num_samples - 1)) * 14;
-            fprintf(f, "%d,%.4f,%.4f,%.4f\n", i, h_ctrl[i].x_dot_des,
-                    h_trajectory[base + 1], h_trajectory[base + 2]);
-        }
-        fclose(f);
-        printf("  Summary: %s\n", summary_file);
-    }
+            char filename[256];
+            snprintf(filename, sizeof(filename), "%s_%03d.csv", output_prefix, i);
 
-    printf("Done! Files: %s_000.csv through %s_%03d.csv\n", output_prefix, output_prefix, N-1);
+            FILE* f = fopen(filename, "w");
+            if (!f) {
+                printf("ERROR: Could not open %s\n", filename);
+                continue;
+            }
+
+            // Header
+            fprintf(f, "t,x_foot,z_foot,phi_leg,phi_body,len_leg,"
+                       "ddt_x_foot,ddt_z_foot,ddt_phi_leg,ddt_phi_body,ddt_len_leg,"
+                       "fsm_state,u1,u2\n");
+
+            for (int s = 0; s < num_samples; s++) {
+                int base = (i * num_samples + s) * 14;
+                fprintf(f, "%.10e,%.10e,%.10e,%.10e,%.10e,%.10e,"
+                           "%.10e,%.10e,%.10e,%.10e,%.10e,"
+                           "%d,%.10e,%.10e\n",
+                        h_trajectory[base + 0],
+                        h_trajectory[base + 1],
+                        h_trajectory[base + 2],
+                        h_trajectory[base + 3],
+                        h_trajectory[base + 4],
+                        h_trajectory[base + 5],
+                        h_trajectory[base + 6],
+                        h_trajectory[base + 7],
+                        h_trajectory[base + 8],
+                        h_trajectory[base + 9],
+                        h_trajectory[base + 10],
+                        (int)h_trajectory[base + 11],
+                        h_trajectory[base + 12],
+                        h_trajectory[base + 13]);
+            }
+            fclose(f);
+        }
+
+        // Also export summary of final states
+        char summary_file[256];
+        snprintf(summary_file, sizeof(summary_file), "%s_summary.csv", output_prefix);
+        FILE* f = fopen(summary_file, "w");
+        if (f) {
+            fprintf(f, "hopper_id,x_dot_des,final_x,final_z\n");
+            for (int i = 0; i < N; i++) {
+                int base = (i * num_samples + (num_samples - 1)) * 14;
+                fprintf(f, "%d,%.4f,%.4f,%.4f\n", i, h_ctrl[i].x_dot_des,
+                        h_trajectory[base + 1], h_trajectory[base + 2]);
+            }
+            fclose(f);
+            printf("  Summary: %s\n", summary_file);
+        }
+
+        printf("Done! Files: %s_000.csv through %s_%03d.csv\n", output_prefix, output_prefix, N-1);
+    } else {
+        printf("Done! (no export)\n");
+    }
 
     // Cleanup
-    cudaFree(d_trajectory);
+    if (d_trajectory) cudaFree(d_trajectory);
     cudaFree(d_ctrl);
     free_state_arrays_device(d_states);
     cudaEventDestroy(start);
@@ -1597,6 +1612,7 @@ void print_usage(const char* prog) {
     printf("  --multi        Run parallel multi-hopper simulation (original)\n");
     printf("  --batched      Run parallel multi-hopper with batched Newton kernels\n");
     printf("  --energy <csv> Analyze energy from trajectory CSV file\n");
+    printf("  --no-export    Skip trajectory logging/CSV export (benchmark mode)\n");
     printf("  -n <num>       Number of hoppers for --multi/--batched (default: 100)\n");
     printf("  -t <time>      Simulation duration in seconds (default: 5.0)\n");
     printf("  -o <file>      Output filename/prefix (default: trajectory_cuda)\n");
@@ -1609,6 +1625,7 @@ int main(int argc, char** argv) {
     bool run_multi = false;
     bool run_batched = false;
     bool run_energy = false;
+    bool export_csv = true;
     int num_hoppers = 100;
     Scalar t_final = 5.0;
     // Default output to parent directory (one level up from project) to keep code folder clean
@@ -1629,6 +1646,8 @@ int main(int argc, char** argv) {
         } else if (strcmp(argv[i], "--energy") == 0 && i + 1 < argc) {
             run_energy = true;
             energy_file = argv[++i];
+        } else if (strcmp(argv[i], "--no-export") == 0) {
+            export_csv = false;
         } else if (strcmp(argv[i], "-n") == 0 && i + 1 < argc) {
             num_hoppers = atoi(argv[++i]);
         } else if (strcmp(argv[i], "-t") == 0 && i + 1 < argc) {
@@ -1742,11 +1761,16 @@ int main(int argc, char** argv) {
         printf("CUDA Device: %s\n", prop.name);
         printf("Hoppers: %d\n", num_hoppers);
         printf("Duration: %.2f s\n", t_final);
-        printf("Output prefix: %s\n\n", output_file);
+        if (export_csv) printf("Output prefix: %s\n\n", output_file);
+        else printf("(benchmark mode - no export)\n\n");
 
-        run_multi_hopper_simulation(num_hoppers, t_final, output_file);
+        auto wall_start = std::chrono::high_resolution_clock::now();
+        run_multi_hopper_simulation(num_hoppers, t_final, output_file, export_csv);
+        auto wall_end = std::chrono::high_resolution_clock::now();
+        double wall_ms = std::chrono::duration<double, std::milli>(wall_end - wall_start).count();
+        printf("  Wall clock: %.2f ms\n", wall_ms);
 
-        printf("\nVisualize with: python src/visualize_multi_hopper.py %s\n", output_file);
+        if (export_csv) printf("\nVisualize with: python src/visualize_multi_hopper.py %s\n", output_file);
     }
 
     if (run_batched) {
@@ -1756,11 +1780,16 @@ int main(int argc, char** argv) {
         printf("CUDA Device: %s\n", prop.name);
         printf("Hoppers: %d\n", num_hoppers);
         printf("Duration: %.2f s\n", t_final);
-        printf("Output prefix: %s\n\n", output_file);
+        if (export_csv) printf("Output prefix: %s\n\n", output_file);
+        else printf("(benchmark mode - no export)\n\n");
 
-        run_multi_hopper_simulation_batched(num_hoppers, t_final, output_file);
+        auto wall_start = std::chrono::high_resolution_clock::now();
+        run_multi_hopper_simulation_batched(num_hoppers, t_final, output_file, export_csv);
+        auto wall_end = std::chrono::high_resolution_clock::now();
+        double wall_ms = std::chrono::duration<double, std::milli>(wall_end - wall_start).count();
+        printf("  Wall clock: %.2f ms\n", wall_ms);
 
-        printf("\nVisualize with: python src/visualize_multi_hopper.py %s\n", output_file);
+        if (export_csv) printf("\nVisualize with: python src/visualize_multi_hopper.py %s\n", output_file);
     }
 
     return (run_tests && tests_failed > 0) ? 1 : 0;

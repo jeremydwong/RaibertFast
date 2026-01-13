@@ -20,19 +20,19 @@
 // We use Schur complement to reduce to 5x5 solve.
 
 __host__ __device__ inline void solve_10x10_block(
-    const double A[5][5],      // dqddot/dq (5x5)
-    const double B[5][5],      // dqddot/dqdot (5x5)
-    const double G_q[5],       // residual for positions
-    const double G_qdot[5],    // residual for velocities
-    double dt,
-    double dq[5],              // output: position correction
-    double dqdot[5]            // output: velocity correction
+    const Scalar A[5][5],      // dqddot/dq (5x5)
+    const Scalar B[5][5],      // dqddot/dqdot (5x5)
+    const Scalar G_q[5],       // residual for positions
+    const Scalar G_qdot[5],    // residual for velocities
+    Scalar dt,
+    Scalar dq[5],              // output: position correction
+    Scalar dqdot[5]            // output: velocity correction
 ) {
-    double half_dt = 0.5 * dt;
-    double half_dt_sq = half_dt * half_dt;
+    Scalar half_dt = 0.5 * dt;
+    Scalar half_dt_sq = half_dt * half_dt;
 
     // Build Schur complement S = I - dt/2 * B - (dt/2)^2 * A
-    double S[5][5];
+    Scalar S[5][5];
     #pragma unroll
     for (int i = 0; i < 5; i++) {
         #pragma unroll
@@ -43,7 +43,7 @@ __host__ __device__ inline void solve_10x10_block(
     }
 
     // Build RHS: G_qdot + dt/2 * A * G_q
-    double rhs[5];
+    Scalar rhs[5];
     #pragma unroll
     for (int i = 0; i < 5; i++) {
         rhs[i] = G_qdot[i];
@@ -68,16 +68,16 @@ __host__ __device__ inline void solve_10x10_block(
 // ============================================================================
 
 __host__ __device__ inline void compute_jacobian_blocks(
-    const double y[10],
-    double u1, double u2,
+    const Scalar y[10],
+    Scalar u1, Scalar u2,
     const PhysicsParams& phys,
-    double A[5][5],    // dqddot/dq
-    double B[5][5]     // dqddot/dqdot
+    Scalar A[5][5],    // dqddot/dq
+    Scalar B[5][5]     // dqddot/dqdot
 ) {
-    constexpr double eps = 1e-7;
+    constexpr Scalar eps = 1e-7;
 
     // Compute qddot at current state
-    double qdd0[5];
+    Scalar qdd0[5];
     compute_accelerations(
         y[0], y[1], y[2], y[3], y[4],
         y[5], y[6], y[7], y[8], y[9],
@@ -87,12 +87,12 @@ __host__ __device__ inline void compute_jacobian_blocks(
     // Compute A = dqddot/dq (perturb positions, indices 0-4)
     #pragma unroll
     for (int j = 0; j < 5; j++) {
-        double y_pert[10];
+        Scalar y_pert[10];
         #pragma unroll
         for (int i = 0; i < 10; i++) y_pert[i] = y[i];
         y_pert[j] += eps;
 
-        double qdd_pert[5];
+        Scalar qdd_pert[5];
         compute_accelerations(
             y_pert[0], y_pert[1], y_pert[2], y_pert[3], y_pert[4],
             y_pert[5], y_pert[6], y_pert[7], y_pert[8], y_pert[9],
@@ -108,12 +108,12 @@ __host__ __device__ inline void compute_jacobian_blocks(
     // Compute B = dqddot/dqdot (perturb velocities, indices 5-9)
     #pragma unroll
     for (int j = 0; j < 5; j++) {
-        double y_pert[10];
+        Scalar y_pert[10];
         #pragma unroll
         for (int i = 0; i < 10; i++) y_pert[i] = y[i];
         y_pert[5 + j] += eps;
 
-        double qdd_pert[5];
+        Scalar qdd_pert[5];
         compute_accelerations(
             y_pert[0], y_pert[1], y_pert[2], y_pert[3], y_pert[4],
             y_pert[5], y_pert[6], y_pert[7], y_pert[8], y_pert[9],
@@ -132,19 +132,19 @@ __host__ __device__ inline void compute_jacobian_blocks(
 // ============================================================================
 
 __host__ __device__ inline void implicit_midpoint_step(
-    double& x_foot, double& z_foot, double& phi_leg, double& phi_body, double& len_leg,
-    double& ddt_x_foot, double& ddt_z_foot, double& ddt_phi_leg, double& ddt_phi_body, double& ddt_len_leg,
-    double u1, double u2,
+    Scalar& x_foot, Scalar& z_foot, Scalar& phi_leg, Scalar& phi_body, Scalar& len_leg,
+    Scalar& ddt_x_foot, Scalar& ddt_z_foot, Scalar& ddt_phi_leg, Scalar& ddt_phi_body, Scalar& ddt_len_leg,
+    Scalar u1, Scalar u2,
     const PhysicsParams& phys,
-    double dt
+    Scalar dt
 ) {
     // Pack current state
-    double y[10] = {x_foot, z_foot, phi_leg, phi_body, len_leg,
+    Scalar y[10] = {x_foot, z_foot, phi_leg, phi_body, len_leg,
                     ddt_x_foot, ddt_z_foot, ddt_phi_leg, ddt_phi_body, ddt_len_leg};
-    double y_new[10];
+    Scalar y_new[10];
 
     // Initial guess: explicit Euler step
-    double f_curr[10];
+    Scalar f_curr[10];
     compute_state_derivative(y, u1, u2, phys, f_curr);
 
     #pragma unroll
@@ -157,31 +157,31 @@ __host__ __device__ inline void implicit_midpoint_step(
 
     for (int iter = 0; iter < NEWTON_ITERS; iter++) {
         // Compute midpoint
-        double y_mid[10];
+        Scalar y_mid[10];
         #pragma unroll
         for (int i = 0; i < 10; i++) {
             y_mid[i] = 0.5 * (y[i] + y_new[i]);
         }
 
         // Evaluate dynamics at midpoint
-        double f_mid[10];
+        Scalar f_mid[10];
         compute_state_derivative(y_mid, u1, u2, phys, f_mid);
 
         // Compute residual: G = y_new - y - dt * f(y_mid)
-        double G[10];
+        Scalar G[10];
         #pragma unroll
         for (int i = 0; i < 10; i++) {
             G[i] = y_new[i] - y[i] - dt * f_mid[i];
         }
 
         // Compute Jacobian blocks A and B at midpoint
-        double A[5][5], B[5][5];
+        Scalar A[5][5], B[5][5];
         compute_jacobian_blocks(y_mid, u1, u2, phys, A, B);
 
         // Solve for correction using block structure
-        double G_q[5] = {G[0], G[1], G[2], G[3], G[4]};
-        double G_qdot[5] = {G[5], G[6], G[7], G[8], G[9]};
-        double dq[5], dqdot[5];
+        Scalar G_q[5] = {G[0], G[1], G[2], G[3], G[4]};
+        Scalar G_qdot[5] = {G[5], G[6], G[7], G[8], G[9]};
+        Scalar dq[5], dqdot[5];
 
         solve_10x10_block(A, B, G_q, G_qdot, dt, dq, dqdot);
 
@@ -211,14 +211,14 @@ __host__ __device__ inline void implicit_midpoint_step(
 // ============================================================================
 
 __host__ __device__ inline void semi_implicit_euler_step(
-    double& x_foot, double& z_foot, double& phi_leg, double& phi_body, double& len_leg,
-    double& ddt_x_foot, double& ddt_z_foot, double& ddt_phi_leg, double& ddt_phi_body, double& ddt_len_leg,
-    double u1, double u2,
+    Scalar& x_foot, Scalar& z_foot, Scalar& phi_leg, Scalar& phi_body, Scalar& len_leg,
+    Scalar& ddt_x_foot, Scalar& ddt_z_foot, Scalar& ddt_phi_leg, Scalar& ddt_phi_body, Scalar& ddt_len_leg,
+    Scalar u1, Scalar u2,
     const PhysicsParams& phys,
-    double dt
+    Scalar dt
 ) {
     // 1. Compute accelerations at current state
-    double qdd[5];
+    Scalar qdd[5];
     compute_accelerations(
         x_foot, z_foot, phi_leg, phi_body, len_leg,
         ddt_x_foot, ddt_z_foot, ddt_phi_leg, ddt_phi_body, ddt_len_leg,
@@ -246,20 +246,20 @@ __host__ __device__ inline void semi_implicit_euler_step(
 
 template<int IntegratorType>
 __host__ __device__ inline void integrator_step(
-    double& x_foot, double& z_foot, double& phi_leg, double& phi_body, double& len_leg,
-    double& ddt_x_foot, double& ddt_z_foot, double& ddt_phi_leg, double& ddt_phi_body, double& ddt_len_leg,
-    double u1, double u2,
+    Scalar& x_foot, Scalar& z_foot, Scalar& phi_leg, Scalar& phi_body, Scalar& len_leg,
+    Scalar& ddt_x_foot, Scalar& ddt_z_foot, Scalar& ddt_phi_leg, Scalar& ddt_phi_body, Scalar& ddt_len_leg,
+    Scalar u1, Scalar u2,
     const PhysicsParams& phys,
-    double dt
+    Scalar dt
 );
 
 template<>
 __host__ __device__ inline void integrator_step<INTEGRATOR_IMPLICIT_MIDPOINT>(
-    double& x_foot, double& z_foot, double& phi_leg, double& phi_body, double& len_leg,
-    double& ddt_x_foot, double& ddt_z_foot, double& ddt_phi_leg, double& ddt_phi_body, double& ddt_len_leg,
-    double u1, double u2,
+    Scalar& x_foot, Scalar& z_foot, Scalar& phi_leg, Scalar& phi_body, Scalar& len_leg,
+    Scalar& ddt_x_foot, Scalar& ddt_z_foot, Scalar& ddt_phi_leg, Scalar& ddt_phi_body, Scalar& ddt_len_leg,
+    Scalar u1, Scalar u2,
     const PhysicsParams& phys,
-    double dt
+    Scalar dt
 ) {
     implicit_midpoint_step(
         x_foot, z_foot, phi_leg, phi_body, len_leg,
@@ -270,13 +270,107 @@ __host__ __device__ inline void integrator_step<INTEGRATOR_IMPLICIT_MIDPOINT>(
 
 template<>
 __host__ __device__ inline void integrator_step<INTEGRATOR_SEMI_IMPLICIT_EULER>(
-    double& x_foot, double& z_foot, double& phi_leg, double& phi_body, double& len_leg,
-    double& ddt_x_foot, double& ddt_z_foot, double& ddt_phi_leg, double& ddt_phi_body, double& ddt_len_leg,
-    double u1, double u2,
+    Scalar& x_foot, Scalar& z_foot, Scalar& phi_leg, Scalar& phi_body, Scalar& len_leg,
+    Scalar& ddt_x_foot, Scalar& ddt_z_foot, Scalar& ddt_phi_leg, Scalar& ddt_phi_body, Scalar& ddt_len_leg,
+    Scalar u1, Scalar u2,
     const PhysicsParams& phys,
-    double dt
+    Scalar dt
 ) {
     semi_implicit_euler_step(
+        x_foot, z_foot, phi_leg, phi_body, len_leg,
+        ddt_x_foot, ddt_z_foot, ddt_phi_leg, ddt_phi_body, ddt_len_leg,
+        u1, u2, phys, dt
+    );
+}
+
+// ============================================================================
+// IMPLICIT MIDPOINT WITH ANALYTICAL JACOBIAN
+// ============================================================================
+
+__host__ __device__ inline void implicit_midpoint_analytical_step(
+    Scalar& x_foot, Scalar& z_foot, Scalar& phi_leg, Scalar& phi_body, Scalar& len_leg,
+    Scalar& ddt_x_foot, Scalar& ddt_z_foot, Scalar& ddt_phi_leg, Scalar& ddt_phi_body, Scalar& ddt_len_leg,
+    Scalar u1, Scalar u2,
+    const PhysicsParams& phys,
+    Scalar dt
+) {
+    // Pack current state
+    Scalar y[10] = {x_foot, z_foot, phi_leg, phi_body, len_leg,
+                    ddt_x_foot, ddt_z_foot, ddt_phi_leg, ddt_phi_body, ddt_len_leg};
+    Scalar y_new[10];
+
+    // Initial guess: explicit Euler step
+    Scalar f_curr[10];
+    compute_state_derivative(y, u1, u2, phys, f_curr);
+
+    #pragma unroll
+    for (int i = 0; i < 10; i++) {
+        y_new[i] = y[i] + dt * f_curr[i];
+    }
+
+    // Newton iterations (fixed count for GPU uniformity)
+    constexpr int NEWTON_ITERS = 4;
+
+    for (int iter = 0; iter < NEWTON_ITERS; iter++) {
+        // Compute midpoint
+        Scalar y_mid[10];
+        #pragma unroll
+        for (int i = 0; i < 10; i++) {
+            y_mid[i] = 0.5 * (y[i] + y_new[i]);
+        }
+
+        // Evaluate dynamics at midpoint
+        Scalar f_mid[10];
+        compute_state_derivative(y_mid, u1, u2, phys, f_mid);
+
+        // Compute residual: G = y_new - y - dt * f(y_mid)
+        Scalar G[10];
+        #pragma unroll
+        for (int i = 0; i < 10; i++) {
+            G[i] = y_new[i] - y[i] - dt * f_mid[i];
+        }
+
+        // Compute Jacobian blocks A and B at midpoint using ANALYTICAL formulas
+        Scalar A[5][5], B[5][5];
+        compute_jacobian_blocks_analytical(y_mid, u1, u2, phys, A, B);
+
+        // Solve for correction using block structure
+        Scalar G_q[5] = {G[0], G[1], G[2], G[3], G[4]};
+        Scalar G_qdot[5] = {G[5], G[6], G[7], G[8], G[9]};
+        Scalar dq[5], dqdot[5];
+
+        solve_10x10_block(A, B, G_q, G_qdot, dt, dq, dqdot);
+
+        // Update: y_new = y_new - delta
+        #pragma unroll
+        for (int i = 0; i < 5; i++) {
+            y_new[i] -= dq[i];
+            y_new[5 + i] -= dqdot[i];
+        }
+    }
+
+    // Unpack result
+    x_foot = y_new[0];
+    z_foot = y_new[1];
+    phi_leg = y_new[2];
+    phi_body = y_new[3];
+    len_leg = y_new[4];
+    ddt_x_foot = y_new[5];
+    ddt_z_foot = y_new[6];
+    ddt_phi_leg = y_new[7];
+    ddt_phi_body = y_new[8];
+    ddt_len_leg = y_new[9];
+}
+
+template<>
+__host__ __device__ inline void integrator_step<INTEGRATOR_IMPLICIT_MIDPOINT_ANALYTICAL>(
+    Scalar& x_foot, Scalar& z_foot, Scalar& phi_leg, Scalar& phi_body, Scalar& len_leg,
+    Scalar& ddt_x_foot, Scalar& ddt_z_foot, Scalar& ddt_phi_leg, Scalar& ddt_phi_body, Scalar& ddt_len_leg,
+    Scalar u1, Scalar u2,
+    const PhysicsParams& phys,
+    Scalar dt
+) {
+    implicit_midpoint_analytical_step(
         x_foot, z_foot, phi_leg, phi_body, len_leg,
         ddt_x_foot, ddt_z_foot, ddt_phi_leg, ddt_phi_body, ddt_len_leg,
         u1, u2, phys, dt
@@ -290,10 +384,10 @@ __host__ __device__ inline void integrator_step<INTEGRATOR_SEMI_IMPLICIT_EULER>(
 template<int IntegratorType>
 __host__ __device__ inline void hopper_step(
     HopperState& state,
-    double t,
+    Scalar t,
     const ControlParams& ctrl,
     const PhysicsParams& phys,
-    double dt
+    Scalar dt
 ) {
     // 1. Compute control
     ControlOutput control = compute_control(t, state, ctrl, phys);

@@ -186,6 +186,9 @@ To run in Jupyter: `jupyter notebook hopper_demo.ipynb`
 The C++ implementation has two different implementations for the ODE Solver:
 ODE45-based and Implicit
 
+**Build Output Directory:**
+All executables should be built to `../RaibertFastBuild/` (one level up from project root). This keeps build artifacts separate from source code.
+
 **Build Environment (Windows with Git Bash):**
 
 Since Claude Code runs in Git Bash, use full paths to the compilers:
@@ -193,15 +196,42 @@ Since Claude Code runs in Git Bash, use full paths to the compilers:
 - **MSVC (cl.exe)**: `"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64\cl.exe"`
 - **CUDA (nvcc)**: `"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9\bin\nvcc.exe"`
 
-**Building C++ files:**
+**IMPORTANT: cl.exe in Git Bash requires vcvars environment**
+
+Direct cl.exe calls from Git Bash fail because Visual Studio environment variables aren't set. Use this pattern:
+
 ```bash
-"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64\cl.exe" /std:c++17 /O2 /EHsc cpp/test_implicit_cpu.cpp /Fe:cpp/test_implicit_cpu.exe
+# For C++ builds, wrap in cmd.exe with vcvars:
+cmd //c "call \"C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Auxiliary/Build/vcvars64.bat\" >nul 2>&1 && cl /std:c++17 /O2 /EHsc [source] /Fe:[output]"
 ```
 
-**Building CUDA files:**
-nvcc needs cl.exe in PATH or use `-ccbin` to specify it:
+**Building C++ files (to RaibertFastBuild):**
 ```bash
-"C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.9\bin\nvcc.exe" -ccbin "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.44.35207\bin\Hostx64\x64" -O2 cpp/cuda/test_cuda.cu -o cpp/cuda/test_cuda.exe
+cd cpp
+cmd //c "call \"C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Auxiliary/Build/vcvars64.bat\" >nul 2>&1 && cl /std:c++17 /O2 /EHsc test_implicit_cpu.cpp /Fe:../../RaibertFastBuild/test_implicit_cpu.exe"
+```
+
+**Building CUDA files (to RaibertFastBuild):**
+nvcc works directly because it handles its own environment. Use `-ccbin` to specify the host compiler:
+```bash
+"C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.9/bin/nvcc.exe" -ccbin "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64" -O2 cpp/cuda/test_cuda.cu -o ../RaibertFastBuild/test_cuda.exe
+```
+
+**Selecting Integrator at Compile Time:**
+
+The integrator is selected via `HOPPER_INTEGRATOR` define:
+- `INTEGRATOR_IMPLICIT_MIDPOINT` (1) - 2nd order, symplectic (default for CPU)
+- `INTEGRATOR_SEMI_IMPLICIT_EULER` (2) - 1st order, fast
+- `INTEGRATOR_IMPLICIT_MIDPOINT_ANALYTICAL` (4) - With analytical Jacobian (default for CUDA)
+
+Example building with semi-implicit Euler:
+```bash
+# CUDA
+"C:/Program Files/NVIDIA GPU Computing Toolkit/CUDA/v12.9/bin/nvcc.exe" -ccbin "C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Tools/MSVC/14.44.35207/bin/Hostx64/x64" -O2 -DHOPPER_INTEGRATOR=INTEGRATOR_SEMI_IMPLICIT_EULER cpp/cuda/test_cuda.cu -o ../RaibertFastBuild/test_cuda_semi_euler.exe
+
+# CPU
+cd cpp
+cmd //c "call \"C:/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Auxiliary/Build/vcvars64.bat\" >nul 2>&1 && cl /std:c++17 /O2 /EHsc /DHOPPER_INTEGRATOR=INTEGRATOR_SEMI_IMPLICIT_EULER test_implicit_cpu.cpp /Fe:../../RaibertFastBuild/test_cpu_semi_euler.exe"
 ```
 
 **Note**: Paths with spaces must be quoted. The `-ccbin` flag tells nvcc where to find the host compiler (cl.exe).

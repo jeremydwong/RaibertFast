@@ -17,27 +17,34 @@
 #include "cuda/hopper_cuda.cuh"
 #include "cuda/integrator_cuda.cuh"
 
+// Tolerance for floating-point comparisons (adapt to precision)
+#ifdef HOPPER_USE_FLOAT32
+constexpr Scalar TEST_TOL = 1e-5;
+#else
+constexpr Scalar TEST_TOL = TEST_TOL;
+#endif
+
 // ============================================================================
 // SIMULATION RUNNER (CPU version using implicit midpoint)
 // ============================================================================
 
 struct SimResult {
-    std::vector<double> t;
+    std::vector<Scalar> t;
     std::vector<HopperState> y;
     std::vector<int> fsm_state;
-    std::vector<double> u1;
-    std::vector<double> u2;
+    std::vector<Scalar> u1;
+    std::vector<Scalar> u2;
 };
 
-SimResult run_hopper_implicit(double t_final, double dt, HopperState y0,
+SimResult run_hopper_implicit(Scalar t_final, Scalar dt, HopperState y0,
                                const ControlParams& ctrl, const PhysicsParams& phys,
-                               double sample_rate = 1000.0) {
+                               Scalar sample_rate = 1000.0) {
     SimResult result;
 
-    double t = 0.0;
+    Scalar t = 0.0;
     HopperState state = y0;
-    double last_sample_t = -1.0;
-    double dt_sample = 1.0 / sample_rate;
+    Scalar last_sample_t = -1.0;
+    Scalar dt_sample = 1.0 / sample_rate;
 
     int num_steps = static_cast<int>(t_final / dt) + 1;
 
@@ -60,8 +67,8 @@ SimResult run_hopper_implicit(double t_final, double dt, HopperState y0,
             last_sample_t = t;
         }
 
-        // Take one step using implicit midpoint
-        hopper_step<INTEGRATOR_IMPLICIT_MIDPOINT>(state, t, ctrl, phys, dt);
+        // Take one step using selected integrator
+        hopper_step<HOPPER_INTEGRATOR>(state, t, ctrl, phys, dt);
         t += dt;
     }
 
@@ -105,9 +112,9 @@ int test_physics_params() {
     printf("Test: PhysicsParams initialization... ");
     PhysicsParams phys;
 
-    if (fabs(phys.m - 10.0) > 1e-10 ||
-        fabs(phys.g - 9.8) > 1e-10 ||
-        fabs(phys.r_s0 - 1.0) > 1e-10) {
+    if (fabs(phys.m - 10.0) > TEST_TOL ||
+        fabs(phys.g - 9.8) > TEST_TOL ||
+        fabs(phys.r_s0 - 1.0) > TEST_TOL) {
         printf("FAILED\n");
         return 1;
     }
@@ -119,8 +126,8 @@ int test_control_params() {
     printf("Test: ControlParams initialization... ");
     ControlParams ctrl;
 
-    if (fabs(ctrl.k_fp - 150.0) > 1e-10 ||
-        fabs(ctrl.k_att - 150.0) > 1e-10) {
+    if (fabs(ctrl.k_fp - 150.0) > TEST_TOL ||
+        fabs(ctrl.k_att - 150.0) > TEST_TOL) {
         printf("FAILED\n");
         return 1;
     }
@@ -132,7 +139,7 @@ int test_hopper_state() {
     printf("Test: HopperState default values... ");
     HopperState state;
 
-    if (fabs(state.len_leg - 1.0) > 1e-10 ||
+    if (fabs(state.len_leg - 1.0) > TEST_TOL ||
         state.fsm_state != FSM_FLIGHT) {
         printf("FAILED\n");
         return 1;
@@ -145,21 +152,21 @@ int test_5x5_solve() {
     printf("Test: 5x5 linear solve... ");
 
     // Simple test: identity matrix
-    double M[5][5] = {
+    Scalar M[5][5] = {
         {1, 0, 0, 0, 0},
         {0, 2, 0, 0, 0},
         {0, 0, 3, 0, 0},
         {0, 0, 0, 4, 0},
         {0, 0, 0, 0, 5}
     };
-    double b[5] = {1, 2, 3, 4, 5};
-    double x[5];
+    Scalar b[5] = {1, 2, 3, 4, 5};
+    Scalar x[5];
 
     solve_5x5(M, b, x);
 
-    double expected[5] = {1, 1, 1, 1, 1};
+    Scalar expected[5] = {1, 1, 1, 1, 1};
     for (int i = 0; i < 5; i++) {
-        if (fabs(x[i] - expected[i]) > 1e-10) {
+        if (fabs(x[i] - expected[i]) > TEST_TOL) {
             printf("FAILED (x[%d] = %f, expected %f)\n", i, x[i], expected[i]);
             return 1;
         }
@@ -183,7 +190,7 @@ int test_compute_control_flight() {
     ControlOutput out = compute_control(0.0, state, ctrl, phys);
 
     // In flight, u1 should be 0
-    if (fabs(out.u1) > 1e-10) {
+    if (fabs(out.u1) > TEST_TOL) {
         printf("FAILED (u1 = %f, expected 0)\n", out.u1);
         return 1;
     }
@@ -195,7 +202,7 @@ int test_compute_accelerations() {
     printf("Test: Dynamics accelerations... ");
 
     PhysicsParams phys;
-    double qdd[5];
+    Scalar qdd[5];
 
     // State at rest, in air
     compute_accelerations(
@@ -214,8 +221,8 @@ int test_compute_accelerations() {
     return 0;
 }
 
-int test_implicit_midpoint_single_step() {
-    printf("Test: Implicit midpoint single step... ");
+int test_integrator_single_step() {
+    printf("Test: Integrator single step... ");
 
     HopperState state;
     state.z_foot = 1.0;  // start high
@@ -225,10 +232,10 @@ int test_implicit_midpoint_single_step() {
     ControlParams ctrl;
     PhysicsParams phys;
 
-    double z_before = state.z_foot;
+    Scalar z_before = state.z_foot;
 
-    // Take one step
-    hopper_step<INTEGRATOR_IMPLICIT_MIDPOINT>(state, 0.0, ctrl, phys, 0.001);
+    // Take one step using selected integrator
+    hopper_step<HOPPER_INTEGRATOR>(state, 0.0, ctrl, phys, 0.001);
 
     // Foot should have moved down (falling)
     if (state.z_foot >= z_before) {
@@ -253,7 +260,7 @@ int test_full_simulation() {
 
     PhysicsParams phys;
 
-    double dt = 1e-4;
+    Scalar dt = 1e-4;
     SimResult result = run_hopper_implicit(1.0, dt, y0, ctrl, phys);
 
     if (result.t.empty()) {
@@ -278,37 +285,45 @@ int test_full_simulation() {
 
 int main(int argc, char** argv) {
     printf("========================================\n");
-    printf("CPU Test of Implicit Midpoint Integrator\n");
+    printf("CPU Hopper Simulation\n");
     printf("(Using CUDA headers with compatibility layer)\n");
     printf("========================================\n\n");
 
     // Parse arguments
     bool run_tests = false;
     bool run_sim = false;
-    double t_final = 5.0;
-    const char* output_file = "trajectory_implicit_cpu.csv";
+    bool run_multi = false;
+    int num_hoppers = 128;
+    Scalar t_final = 5.0;
+    const char* output_file = "trajectory_cpu.csv";
 
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "--test") == 0) {
             run_tests = true;
         } else if (strcmp(argv[i], "--sim") == 0) {
             run_sim = true;
+        } else if (strcmp(argv[i], "--multi") == 0) {
+            run_multi = true;
+        } else if (strcmp(argv[i], "-n") == 0 && i + 1 < argc) {
+            num_hoppers = atoi(argv[++i]);
         } else if (strcmp(argv[i], "-t") == 0 && i + 1 < argc) {
             t_final = atof(argv[++i]);
         } else if (strcmp(argv[i], "-o") == 0 && i + 1 < argc) {
             output_file = argv[++i];
         } else if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
-            printf("Usage: %s [--test] [--sim] [-t time] [-o file]\n", argv[0]);
-            printf("  --test  Run unit tests\n");
-            printf("  --sim   Run simulation and export trajectory\n");
-            printf("  -t      Simulation time (default: 5.0)\n");
-            printf("  -o      Output file (default: trajectory_implicit_cpu.csv)\n");
+            printf("Usage: %s [--test] [--sim] [--multi] [-n num] [-t time] [-o file]\n", argv[0]);
+            printf("  --test   Run unit tests\n");
+            printf("  --sim    Run single-hopper simulation\n");
+            printf("  --multi  Run N hoppers sequentially (serial CPU baseline)\n");
+            printf("  -n       Number of hoppers for --multi (default: 128)\n");
+            printf("  -t       Simulation time (default: 5.0)\n");
+            printf("  -o       Output file prefix (default: trajectory_cpu.csv)\n");
             return 0;
         }
     }
 
     // Default: run tests if no args
-    if (!run_tests && !run_sim) {
+    if (!run_tests && !run_sim && !run_multi) {
         run_tests = true;
     }
 
@@ -323,7 +338,7 @@ int main(int argc, char** argv) {
         failures += test_5x5_solve();
         failures += test_compute_control_flight();
         failures += test_compute_accelerations();
-        failures += test_implicit_midpoint_single_step();
+        failures += test_integrator_single_step();
         failures += test_full_simulation();
 
         printf("\n========================================\n");
@@ -349,13 +364,13 @@ int main(int argc, char** argv) {
 
         PhysicsParams phys;
 
-        double dt = 1e-4;
+        Scalar dt = 1e-4;
 
         auto start = std::chrono::high_resolution_clock::now();
         SimResult result = run_hopper_implicit(t_final, dt, y0, ctrl, phys);
         auto end = std::chrono::high_resolution_clock::now();
 
-        double elapsed = std::chrono::duration<double>(end - start).count();
+        Scalar elapsed = std::chrono::duration<Scalar>(end - start).count();
 
         printf("  Simulated time: %.4f s\n", result.t.back());
         printf("  Wall clock:     %.4f s\n", elapsed);
@@ -370,6 +385,56 @@ int main(int argc, char** argv) {
         export_trajectory(output_file, result);
         printf("\nExported trajectory to: %s\n", output_file);
         printf("Visualize with: python src/visualize_cpp_trajectory.py %s\n", output_file);
+    }
+
+    if (run_multi) {
+        printf("\nRunning %d hoppers sequentially (serial CPU) for %.2f seconds...\n", num_hoppers, t_final);
+
+        PhysicsParams phys;
+        Scalar dt = 1e-4;
+        int num_steps = static_cast<int>(t_final / dt) + 1;
+
+        // Create array of hopper states with varied initial conditions
+        std::vector<HopperState> states(num_hoppers);
+        std::vector<ControlParams> ctrls(num_hoppers);
+
+        for (int i = 0; i < num_hoppers; i++) {
+            states[i].z_foot = 0.4;
+            states[i].phi_leg = 0.01;
+            states[i].len_leg = 1.0;
+            states[i].fsm_state = FSM_FLIGHT;
+            // Vary desired velocity across hoppers
+            ctrls[i].x_dot_des = 1.0 + 4.0 * i / (num_hoppers - 1);  // 1.0 to 5.0 m/s
+        }
+
+        auto start = std::chrono::high_resolution_clock::now();
+
+        // Simulate all hoppers sequentially
+        for (int step = 0; step < num_steps; step++) {
+            Scalar t = step * dt;
+            for (int i = 0; i < num_hoppers; i++) {
+                hopper_step<HOPPER_INTEGRATOR>(states[i], t, ctrls[i], phys, dt);
+            }
+        }
+
+        auto end = std::chrono::high_resolution_clock::now();
+        Scalar elapsed = std::chrono::duration<Scalar>(end - start).count();
+
+        printf("\n========================================\n");
+        printf("Serial CPU Results:\n");
+        printf("  Hoppers:        %d\n", num_hoppers);
+        printf("  Sim time:       %.2f s\n", t_final);
+        printf("  Wall clock:     %.4f s\n", elapsed);
+        printf("  Total hopper-s: %.2f\n", t_final * num_hoppers);
+        printf("  Throughput:     %.1f hopper-seconds/wall-second\n", (t_final * num_hoppers) / elapsed);
+        printf("========================================\n");
+
+        // Print sample of final states
+        printf("\nSample final states:\n");
+        for (int i = 0; i < num_hoppers; i += num_hoppers / 4) {
+            printf("  Hopper %3d: x=%.2f m, x_dot_des=%.1f m/s\n",
+                   i, states[i].x_foot, ctrls[i].x_dot_des);
+        }
     }
 
     return failures;

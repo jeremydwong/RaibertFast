@@ -123,7 +123,7 @@ def create_hopper_geometry(x_foot, z_foot, phi_leg, phi_body, leg_length, y_offs
     return polys
 
 
-def animate_multi_hopper_matplotlib(trajectories, p, output_path, fps=30):
+def animate_multi_hopper_matplotlib(trajectories, p, output_path, fps=30, hopper_spacing=1.0):
     """
     Animate multiple hoppers using matplotlib and export to video.
 
@@ -132,9 +132,23 @@ def animate_multi_hopper_matplotlib(trajectories, p, output_path, fps=30):
         p: Parameters object
         output_path: Path for output video file
         fps: Animation framerate
+        hopper_spacing: Distance between hoppers in grid (meters)
     """
     N = len(trajectories)
     print(f"Animating {N} hoppers with matplotlib...")
+
+    # Compute grid layout for tiling hoppers
+    grid_cols = int(np.ceil(np.sqrt(N)))
+    grid_rows = int(np.ceil(N / grid_cols))
+    print(f"Grid layout: {grid_rows}x{grid_cols}, spacing: {hopper_spacing}m")
+
+    def get_hopper_offset(idx):
+        """Get (x_offset, y_offset) for hopper index in grid layout."""
+        row = idx // grid_cols
+        col = idx % grid_cols
+        x_off = (col - (grid_cols - 1) / 2) * hopper_spacing
+        y_off = (row - (grid_rows - 1) / 2) * hopper_spacing
+        return x_off, y_off
 
     # Subsample for target fps
     tout_ref = trajectories[0][0]
@@ -155,7 +169,8 @@ def animate_multi_hopper_matplotlib(trajectories, p, output_path, fps=30):
         x_min = min(x_min, yout[:, 0].min() - 2)
         x_max = max(x_max, yout[:, 0].max() + 2)
 
-    y_extent = N * 0.5 / 2 + 2
+    # Y extent based on grid size
+    y_extent = (grid_rows * hopper_spacing) / 2 + 2
 
     # Create figure
     fig = plt.figure(figsize=(16, 9))
@@ -205,10 +220,12 @@ def animate_multi_hopper_matplotlib(trajectories, p, output_path, fps=30):
             phi_leg = q[2]
             phi_body = q[3]
             leg_length = q[4]
-            y_offset = (i - N/2) * 0.5
+
+            # Get grid position offset for this hopper
+            x_offset, y_offset = get_hopper_offset(i)
 
             polys = create_hopper_geometry(
-                x_foot, z_foot, phi_leg, phi_body, leg_length,
+                x_foot + x_offset, z_foot, phi_leg, phi_body, leg_length,
                 y_offset, colors[i]
             )
 
@@ -265,6 +282,7 @@ def main():
     # Parse arguments
     output_dir = sys.argv[1] if len(sys.argv) > 1 else "../RaibertFastBuild"
     prefix = sys.argv[2] if len(sys.argv) > 2 else "trajectory_cuda"
+    hopper_spacing = float(sys.argv[3]) if len(sys.argv) > 3 else 1.0  # Default 1m spacing
 
     # Convert to absolute path
     if not os.path.isabs(output_dir):
@@ -304,7 +322,7 @@ def main():
     p = hopperParameters()
 
     # Run animation
-    animate_multi_hopper_matplotlib(trajectories, p, video_output, fps=30)
+    animate_multi_hopper_matplotlib(trajectories, p, video_output, fps=30, hopper_spacing=hopper_spacing)
 
     return 0
 
